@@ -78,6 +78,16 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px
 .ev { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
 .ev:first-child { border-top: 0; }
 details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details.alloc { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+details.alloc summary { color: var(--ink); font-size: 13.5px; }
+details.alloc summary .muted { font-size: 12.5px; }
+.wgrid { display: grid; gap: 6px; margin-top: 8px; }
+.wrow { display: grid; grid-template-columns: 22px 1fr auto 76px; align-items: center; gap: 8px; background: var(--chip); border-radius: 10px; padding: 7px 10px; margin: 0; color: var(--ink); font-size: 14px; cursor: pointer; }
+.wrow input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
+.wrow .wname { font-weight: 600; }
+.wrow .leg { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.wrow input[type=number] { width: 76px; }
+.wrow.off .wname, .wrow.off .leg { opacity: .45; }
 </style>
 </head>
 <body>
@@ -153,6 +163,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <div class="card">
     <h2>我的帳戶</h2>
     <div id="acct"></div>
+    <div id="myAlloc"></div>
     <details style="margin-top:8px"><summary>最近委託</summary><div class="scroll" id="orders"></div></details>
   </div>
 
@@ -288,16 +299,21 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const my = d.my_status && d.my_status.payload ? d.my_status.payload : null;
     const myAge = d.my_status ? (now - ts(d.my_status.updated_at)) / 1000 : null;
     const t1 = sig.target_tmf;
+    const legs = owner ? ((d.private || {}).legs || null) : null;
+    const myW = (d.me || {}).weights || null;
     if (owner) {
-      $("tgtTitle").textContent = "主組合淨部位（微台等值）";
-      $("myTarget").innerHTML = `<span class="${cls(t1)}">${signed(t1)}</span>`;
-      $("tgtCalc").textContent = t1 == null ? "" : `≈ 小台 ${signed(Math.trunc(t1 / 5))}、微台 ${signed(t1 - 5 * Math.trunc(t1 / 5))}`;
+      const mt = legs ? Math.sign(wTarget(legs, myW)) * Math.floor(Math.abs(wTarget(legs, myW)) + 0.5) : t1;
+      $("tgtTitle").textContent = "我的目標（微台等值，依我的配置）";
+      $("myTarget").innerHTML = `<span class="${cls(mt)}">${signed(mt)}</span>`;
+      $("tgtCalc").textContent = mt == null ? "" : `≈ 小台 ${signed(Math.trunc(mt / 5))}、微台 ${signed(mt - 5 * Math.trunc(mt / 5))}｜主組合 1 倍 ${signed(t1)}`;
+      if (!editing("myAlloc")) $("myAlloc").innerHTML = allocHtml("me", myW, legs, "我的策略配置");
     } else {
       const m = my && my.multiplier != null ? my.multiplier : null;
       const tgt = my ? my.target_tmf : null;
       $("tgtTitle").textContent = "我的目標（微台）";
       $("myTarget").innerHTML = `<span class="${cls(tgt)}">${signed(tgt)}</span>`;
-      $("tgtCalc").textContent = t1 == null ? "" : `主機 ${signed(t1)} × 倍數 ${m == null ? "—" : m}`;
+      $("tgtCalc").textContent = t1 == null ? "" : `主機 ${signed(t1)}（依我的策略配置）× 倍數 ${m == null ? "—" : m}`;
+      $("myAlloc").innerHTML = myW && !isDefault(myW) ? `<div class="sub" style="margin-top:8px">策略配置（主機設定）：${esc(wText(myW))}</div>` : "";
     }
     if (my) {
       const hk = my.held_by_kind || {};
@@ -324,11 +340,46 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (owner) {
       $("strats").innerHTML = stratsHtml((d.private || {}).strategies || []);
       $("combos").innerHTML = combosHtml((d.private || {}).combos || []);
-      $("clients").innerHTML = clientsHtml(d.clients || [], now, t1);
+      if (!editing("clients")) $("clients").innerHTML = clientsHtml(d.clients || [], now, legs);
     }
     $("events").innerHTML = eventsHtml(d.events || []);
     $("foot").textContent = "更新 " + new Date().toLocaleTimeString("zh-TW", { hour12: false }) + "｜每 10 秒自動更新";
   }
+
+  // ---------- 策略配置 ----------
+  const KEYS = ["S1", "S2", "S3", "A", "B"];
+  const NAMES = { S1: "S1", S2: "S2", S3: "S3", A: "回歸A", B: "回歸B" };
+  const wOf = (w, k) => (w && w[k]) || { on: true, mult: 1 };
+  const wText = (w) => KEYS.map((k) => { const x = wOf(w, k); return x.on ? `${NAMES[k]}×${Number(x.mult)}` : `${NAMES[k]} 關`; }).join("　");
+  const isDefault = (w) => KEYS.every((k) => { const x = wOf(w, k); return x.on && Number(x.mult) === 1; });
+  const wTarget = (legs, w) => KEYS.reduce((a, k) => { const x = wOf(w, k); return a + (Number((legs || {})[k]) || 0) * (x.on ? Number(x.mult) : 0); }, 0);
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const sgn1 = (v) => Number.isInteger(r3(v)) ? signed(r3(v)) : signed(v, 1);
+  function allocHtml(scope, w, legs, title) {
+    const rows = KEYS.map((k) => {
+      const x = wOf(w, k); const lg = legs ? (legs[k] ?? 0) : null;
+      return `<label class="wrow ${x.on ? "" : "off"}"><input type="checkbox" data-k="${k}" data-f="on" ${x.on ? "checked" : ""}>
+        <span class="wname">${NAMES[k]}</span><span class="leg muted">${lg == null ? "" : "目前 " + signed(lg)}</span>
+        <input type="number" data-k="${k}" data-f="mult" min="0" max="5" step="0.1" value="${Number(x.mult)}"></label>`;
+    }).join("");
+    return `<details class="alloc" data-scope="${esc(scope)}"><summary>${esc(title)}：<span class="muted">${isDefault(w) ? "全部開、各 ×1（同主組合）" : esc(wText(w))}</span></summary>
+      <div class="sub">勾選＝跟這個策略；數字＝這個策略的倍數（0–5，1 = 主組合的口數）。</div>
+      <div class="wgrid">${rows}</div>
+      <div class="actions"><button class="btn primary small" type="button" data-act="weights">儲存配置</button>
+        <button class="btn small" type="button" data-act="wreset">全部恢復 ×1</button>
+        <span class="k" data-prev>${legs ? "試算 1 倍目標 " + sgn1(wTarget(legs, w)) : ""}</span></div></details>`;
+  }
+  function readAlloc(box) {
+    const w = {};
+    KEYS.forEach((k) => {
+      const on = box.querySelector(`input[data-k="${k}"][data-f="on"]`).checked;
+      let m = parseFloat(box.querySelector(`input[data-k="${k}"][data-f="mult"]`).value);
+      if (isNaN(m) || m < 0) m = 0; if (m > 5) m = 5;
+      w[k] = { on, mult: m };
+    });
+    return w;
+  }
+  const editing = (id) => { const c = $(id); return !!c && (c.contains(document.activeElement) || !!c.querySelector("details.alloc[open]")); };
 
   function acctHtml(p, age) {
     const m = p.margin || {};
@@ -368,7 +419,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     return list.map((c) => `<div class="row"><span class="k">${esc(c.name)}${c.main ? "（主）" : ""}</span>
       <span class="v"><span class="${cls(c.pnl)}">NT$${signed(c.pnl)}</span><span class="muted" style="font-size:12.5px">｜回檔 ${num(c.dd)}</span></span></div>`).join("");
   }
-  function clientsHtml(list, now, t1) {
+  function clientsHtml(list, now, legs) {
     const fl = list;
     if (!fl.length) return '<div class="muted">還沒有親友。輸入名字按「新增親友」，把產生的邀請碼傳給他。</div>';
     return fl.map((c) => {
@@ -391,7 +442,8 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
           <button class="btn small" data-act="delete">刪除</button>
           <span class="nowrap"><span class="k">倍數上限</span><input type="number" min="0" step="0.1" value="${esc(c.max_multiplier)}" data-max>
           <button class="btn small" data-act="max">設定</button></span>
-        </div></div>`;
+        </div>
+        ${allocHtml(c.id, c.weights, legs, "策略配置")}</div>`;
     }).join("");
   }
   function eventsHtml(list) {
@@ -399,6 +451,34 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     return list.slice(0, 12).map((e) => `<div class="ev"><span class="muted">${esc(String(e.ts || "").slice(5, 16).replace("T", " "))}</span>
       <span>${signed(e.prev_tmf)} → <b class="${cls(e.target_tmf)}">${signed(e.target_tmf)}</b></span><span class="muted">@ ${num(e.px)}</span></div>`).join("");
   }
+
+  // ---------- 策略配置：試算、儲存 ----------
+  document.addEventListener("input", (ev) => {
+    const box = ev.target.closest("details.alloc"); if (!box) return;
+    const w = readAlloc(box);
+    box.querySelectorAll(".wrow").forEach((row) => row.classList.toggle("off", !row.querySelector("[data-f=on]").checked));
+    const legs = lastData && lastData.private ? lastData.private.legs : null;
+    const pv = box.querySelector("[data-prev]");
+    if (pv && legs) pv.textContent = "試算 1 倍目標 " + sgn1(wTarget(legs, w));
+  });
+  document.addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button[data-act=weights], button[data-act=wreset]"); if (!b) return;
+    ev.stopPropagation();
+    const box = b.closest("details.alloc"); const scope = box.dataset.scope;
+    if (b.dataset.act === "wreset") {
+      box.querySelectorAll("[data-f=on]").forEach((x) => { x.checked = true; });
+      box.querySelectorAll("[data-f=mult]").forEach((x) => { x.value = 1; });
+      box.dispatchEvent(new Event("input", { bubbles: true })); return;
+    }
+    const w = readAlloc(box);
+    b.disabled = true;
+    try {
+      const r = scope === "me" ? await rpc("set_my_weights", { p_weights: w }) : await rpc("set_follower", { p_id: scope, p_weights: w });
+      if (!r || !r.ok) { alert("沒有成功：" + ((r && r.error) || "")); return; }
+      box.open = false; if (document.activeElement) document.activeElement.blur();
+      await refresh();
+    } catch (e) { alert(e.message); } finally { b.disabled = false; }
+  }, true);
 
   // ---------- 主機操作 ----------
   $("clients").addEventListener("click", async (ev) => {
