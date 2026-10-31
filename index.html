@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418">
+<meta name="robots" content="noindex">
+<title>翻單跟單儀表板</title>
+<!-- 設定：主機把下面兩個值換成自己 Supabase 專案的（Project Settings → API）。
+     也可以在登入畫面按「連線設定」輸入，會存在那支手機。anon key 本來就是公開用的，資料靠登入與權限保護。 -->
+<script>
+  const DEFAULT_SUPABASE_URL = "https://kcptipsdbuekzxrmmguu.supabase.co";
+  const DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtjcHRpcHNkYnVla3p4cm1tZ3V1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNzU0NzQsImV4cCI6MjEwODk1MTQ3NH0.kC9QF9TaKuf8YN314D8WylCHtoQ7Ysy2BJkzP9wSHDc";
+</script>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --ink: #15181d; --muted: #646b76; --line: #e3e6ea;
+  --long: #c62f2f; --short: #11804a; --accent: #2a5bd7; --warn: #b26a00; --bad: #c62f2f; --ok: #11804a;
+  --chip: #eef1f5; --shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1215; --card: #181c21; --ink: #e8eaed; --muted: #9aa1ab; --line: #2a3038;
+    --long: #ff6b6b; --short: #3ccf8a; --accent: #7ea2ff; --warn: #f0b04a; --bad: #ff6b6b; --ok: #3ccf8a;
+    --chip: #232931; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1215; --card: #181c21; --ink: #e8eaed; --muted: #9aa1ab; --line: #2a3038;
+  --long: #ff6b6b; --short: #3ccf8a; --accent: #7ea2ff; --warn: #f0b04a; --bad: #ff6b6b; --ok: #3ccf8a;
+  --chip: #232931; --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+body { padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom)); max-width: 720px; margin: 0 auto; }
+header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 0 8px; display: flex; align-items: center; gap: 8px; }
+header h1 { font-size: 17px; margin: 0; flex: 1; letter-spacing: .02em; }
+.btn { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px;
+  padding: 7px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.small { padding: 4px 9px; font-size: 13px; border-radius: 8px; }
+.btn:disabled { opacity: .5; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 10px 0; box-shadow: var(--shadow); }
+.card h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 10px; letter-spacing: .04em; }
+.row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 5px 0; }
+.row + .row { border-top: 1px solid var(--line); }
+.k { color: var(--muted); font-size: 13.5px; }
+.row > .k { flex-shrink: 0; }
+.nowrap { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.v { font-variant-numeric: tabular-nums; text-align: right; }
+.big { font-size: 34px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.mid { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat { background: var(--chip); border-radius: 10px; padding: 9px 10px; min-width: 0; }
+.stat .k { font-size: 12px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 600; background: var(--chip); white-space: nowrap; }
+.badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); } .muted { color: var(--muted); }
+.long { color: var(--long); } .short { color: var(--short); }
+.statusbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sub { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; padding: 4px 4px 6px; border-bottom: 1px solid var(--line); }
+td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.r, th.r { text-align: right; }
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.client { border-top: 1px solid var(--line); padding: 10px 0; }
+.client:first-of-type { border-top: 0; padding-top: 0; }
+.client .name { font-weight: 650; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+input[type=email], input[type=password], input[type=text], input[type=number] {
+  width: 100%; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+input[type=number] { width: 80px; padding: 5px 8px; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px; }
+.err { color: var(--bad); font-size: 13.5px; margin-top: 10px; min-height: 1em; }
+.hidden { display: none !important; }
+.ev { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.ev:first-child { border-top: 0; }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>翻單跟單儀表板</h1>
+  <span id="who" class="muted" style="font-size:12.5px"></span>
+  <button class="btn small hidden" id="logoutBtn">登出</button>
+</header>
+
+<!-- 登入 -->
+<section id="loginView" class="hidden">
+  <div class="card">
+    <h2 id="loginTitle">輸入邀請碼</h2>
+    <form id="codeForm">
+      <label for="code">主機給你的邀請碼</label>
+      <input id="code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="GW-XXXX-XXXX-XXXX-XXXX" required>
+      <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn primary" type="submit" id="codeBtn">進入</button>
+        <button class="btn" type="button" id="toOwner">主機登入</button>
+      </div>
+    </form>
+    <form id="loginForm" class="hidden">
+      <label for="email">主機 Email</label>
+      <input id="email" type="email" autocomplete="username">
+      <label for="pw">密碼</label>
+      <input id="pw" type="password" autocomplete="current-password">
+      <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn primary" type="submit" id="loginBtn">登入</button>
+        <button class="btn" type="button" id="toCode">改用邀請碼</button>
+        <button class="btn" type="button" id="cfgToggle">連線設定</button>
+      </div>
+    </form>
+    <div class="err" id="loginErr"></div>
+    <div id="cfgBox" class="hidden">
+      <label for="cfgUrl">Supabase URL</label>
+      <input id="cfgUrl" type="text" placeholder="https://xxxx.supabase.co">
+      <label for="cfgKey">anon key</label>
+      <input id="cfgKey" type="text">
+      <div style="margin-top:10px"><button class="btn" type="button" id="cfgSave">儲存</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- 主畫面 -->
+<section id="mainView" class="hidden">
+  <div class="card">
+    <div class="statusbar">
+      <span id="sigBadge" class="badge muted">讀取中</span>
+      <span id="sigAge" class="muted" style="font-size:13px"></span>
+    </div>
+    <div class="grid2" style="margin-top:12px">
+      <div class="stat"><div class="k">價格</div><div class="mid" id="px">—</div></div>
+      <div class="stat"><div class="k">最新 K 棒</div><div class="mid" id="bar" style="font-size:16px">—</div></div>
+    </div>
+    <div class="sub" id="sigNote"></div>
+  </div>
+
+  <div class="card">
+    <h2 id="tgtTitle">目標部位</h2>
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px">
+      <div>
+        <div class="big" id="myTarget">—</div>
+        <div class="sub" id="tgtCalc"></div>
+      </div>
+      <div style="text-align:right">
+        <div class="k">實際部位</div>
+        <div class="mid" id="myHeld">—</div>
+        <div id="syncBadge" class="badge muted" style="margin-top:6px">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>我的帳戶</h2>
+    <div id="acct"></div>
+    <details style="margin-top:8px"><summary>最近委託</summary><div class="scroll" id="orders"></div></details>
+  </div>
+
+  <div class="card hidden" id="stratCard">
+    <h2>各策略（1 倍）</h2>
+    <div class="scroll" id="strats"></div>
+    <div id="combos" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card hidden" id="clientsCard">
+    <h2>親友</h2>
+    <form id="addForm" class="actions" style="margin:0 0 12px">
+      <input id="addName" type="text" placeholder="親友名字" style="flex:1; min-width:120px; padding:7px 10px">
+      <span class="nowrap"><span class="k">倍數上限</span><input id="addMax" type="number" min="0" step="0.1" value="0.5"></span>
+      <button class="btn primary small" type="submit">新增親友</button>
+    </form>
+    <div id="newCode" class="hidden" style="background:var(--chip); border-radius:10px; padding:12px; margin-bottom:12px">
+      <div class="k" id="newCodeFor"></div>
+      <div class="mid" id="newCodeVal" style="font-family:ui-monospace, Menlo, Consolas, monospace; letter-spacing:.04em; margin:6px 0; word-break:break-all"></div>
+      <div class="actions" style="margin-top:4px">
+        <button class="btn small" type="button" id="copyCode">複製</button>
+        <button class="btn small" type="button" id="hideCode">我記下來了</button>
+      </div>
+      <div class="sub">邀請碼只會顯示這一次。忘了可以按「重發邀請碼」，舊的會立刻失效。</div>
+    </div>
+    <div id="clients"></div>
+  </div>
+
+  <div class="card">
+    <h2>部位變動紀錄</h2>
+    <div id="events"></div>
+  </div>
+  <div class="sub" id="foot" style="text-align:center"></div>
+</section>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+  };
+  const qs = new URLSearchParams(location.search);
+  let URL0 = qs.get("url") || store.get("gw_url") || DEFAULT_SUPABASE_URL;
+  let KEY0 = qs.get("key") || store.get("gw_key") || DEFAULT_SUPABASE_ANON_KEY;
+  let session = null;
+  try { session = JSON.parse(store.get("gw_session") || "null"); } catch (e) { session = null; }
+  let fcode = store.get("gw_code");
+  if (session) fcode = null;
+  let timer = null, busy = false, lastData = null;
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = (v, d = 0) => (v === null || v === undefined || v === "" || isNaN(v)) ? "—" : Number(v).toLocaleString("zh-TW", { maximumFractionDigits: d, minimumFractionDigits: d });
+  const signed = (v, d = 0) => (v === null || v === undefined || isNaN(v)) ? "—" : (v > 0 ? "+" : "") + num(v, d);
+  const cls = (v) => v > 0 ? "long" : v < 0 ? "short" : "muted";
+  const dir = (p) => p > 0 ? '<span class="long">多</span>' : p < 0 ? '<span class="short">空</span>' : '<span class="muted">無</span>';
+  const ts = (s) => s ? Date.parse(s) : NaN;
+  const ago = (sec) => sec == null || isNaN(sec) ? "—" : sec < 60 ? `${Math.round(sec)} 秒前` : sec < 3600 ? `${Math.round(sec / 60)} 分鐘前` : sec < 86400 ? `${Math.round(sec / 3600)} 小時前` : `${Math.round(sec / 86400)} 天前`;
+
+  async function http(path, body, auth = true) {
+    const h = { apikey: KEY0, "Content-Type": "application/json" };
+    if (auth && session) h.Authorization = "Bearer " + session.access_token;
+    const base = String(URL0).trim().replace(/\/+$/, "").replace(/\/(rest|auth)\/v1$/, "");
+    const r = await fetch(base + path, { method: "POST", headers: h, body: JSON.stringify(body || {}) });
+    let j = null; try { j = await r.json(); } catch (e) {}
+    return { code: r.status, j };
+  }
+  async function login(email, password) {
+    const { code, j } = await http("/auth/v1/token?grant_type=password", { email, password }, false);
+    if (code !== 200) throw new Error((j && (j.error_description || j.msg || j.message)) || ("登入失敗 " + code));
+    setSession(j);
+  }
+  function setSession(j) {
+    session = { access_token: j.access_token, refresh_token: j.refresh_token, exp: Date.now() / 1000 + (j.expires_in || 3600) - 120, email: (j.user && j.user.email) || (session && session.email) };
+    store.set("gw_session", JSON.stringify(session));
+  }
+  async function ensureToken() {
+    if (!session) throw new Error("NOAUTH");
+    if (Date.now() / 1000 < session.exp) return;
+    const { code, j } = await http("/auth/v1/token?grant_type=refresh_token", { refresh_token: session.refresh_token }, false);
+    if (code !== 200) { logout(); throw new Error("NOAUTH"); }
+    setSession(j);
+  }
+  async function rpcAnon(fn, args) {
+    const r = await http("/rest/v1/rpc/" + fn, args, false);
+    if (r.code >= 300) throw new Error((r.j && r.j.message) || ("錯誤 " + r.code));
+    return r.j;
+  }
+  async function rpc(fn, args) {
+    await ensureToken();
+    let r = await http("/rest/v1/rpc/" + fn, args);
+    if (r.code === 401) { session.exp = 0; await ensureToken(); r = await http("/rest/v1/rpc/" + fn, args); }
+    if (r.code >= 300) throw new Error((r.j && r.j.message) || ("錯誤 " + r.code));
+    return r.j;
+  }
+  function logout() {
+    session = null; fcode = null; store.del("gw_session"); store.del("gw_code"); stop(); show("login");
+  }
+  function show(v) {
+    $("loginView").classList.toggle("hidden", v !== "login");
+    $("mainView").classList.toggle("hidden", v !== "main");
+    $("logoutBtn").classList.toggle("hidden", v !== "main");
+  }
+
+  // ---------- 畫面 ----------
+  function render(d) {
+    lastData = d;
+    const now = ts(d.server_time);
+    const sig = d.signal || {};
+    const age = (now - ts(d.updated_at)) / 1000;
+    const owner = d.role === "owner";
+    $("who").textContent = (d.me && (d.me.display_name || d.me.email)) || "";
+
+    // 訊號狀態
+    const st = String(sig.status || "");
+    let badge = ["muted", "等待主機"];
+    if (!d.updated_at) badge = ["muted", "主機尚未上傳"];
+    else if (age > 90 && sig.in_session) badge = ["bad", "主機離線"];
+    else if (st.startsWith("資料可能停止")) badge = ["bad", "股威停更"];
+    else if (st.includes("休市")) badge = ["muted", "休市"];
+    else if (!sig.in_session) badge = ["muted", "非交易時段"];
+    else badge = ["ok", "正常"];
+    $("sigBadge").className = "badge " + badge[0];
+    $("sigBadge").textContent = badge[1];
+    $("sigAge").textContent = d.updated_at ? "主機更新 " + ago(age) : "";
+    $("px").textContent = num(sig.px);
+    $("bar").textContent = sig.bar ? String(sig.bar).slice(5, 16) : "—";
+    $("sigNote").textContent = (sig.combo ? "組合 " + sig.combo : "") + (sig.target_time ? "｜最近換倉 " + String(sig.target_time).slice(5, 16) + " " + (sig.target_reason || "") : "");
+
+    // 目標部位
+    const my = d.my_status && d.my_status.payload ? d.my_status.payload : null;
+    const myAge = d.my_status ? (now - ts(d.my_status.updated_at)) / 1000 : null;
+    const t1 = sig.target_tmf;
+    if (owner) {
+      $("tgtTitle").textContent = "主組合淨部位（微台等值）";
+      $("myTarget").innerHTML = `<span class="${cls(t1)}">${signed(t1)}</span>`;
+      $("tgtCalc").textContent = t1 == null ? "" : `≈ 小台 ${signed(Math.trunc(t1 / 5))}、微台 ${signed(t1 - 5 * Math.trunc(t1 / 5))}`;
+    } else {
+      const m = my && my.multiplier != null ? my.multiplier : null;
+      const tgt = my ? my.target_tmf : null;
+      $("tgtTitle").textContent = "我的目標（微台）";
+      $("myTarget").innerHTML = `<span class="${cls(tgt)}">${signed(tgt)}</span>`;
+      $("tgtCalc").textContent = t1 == null ? "" : `主機 ${signed(t1)} × 倍數 ${m == null ? "—" : m}`;
+    }
+    if (my) {
+      const hk = my.held_by_kind || {};
+      const heldEq = (hk["小台"] || 0) * 5 + (hk["微台"] || 0);
+      $("myHeld").innerHTML = owner
+        ? `<span class="${cls(heldEq)}">小台 ${signed(hk["小台"] || 0)}｜微台 ${signed(hk["微台"] || 0)}</span>`
+        : `<span class="${cls(hk["微台"] || 0)}">${signed(hk["微台"] || 0)}</span>`;
+      const stale = myAge > 90;
+      $("syncBadge").className = "badge " + (stale ? "warn" : my.paused ? "warn" : my.in_sync ? "ok" : "warn");
+      $("syncBadge").textContent = stale ? "程式未回報" : my.paused ? "已暫停" : my.in_sync ? "部位一致" : "調整中";
+    } else {
+      $("myHeld").textContent = "—";
+      $("syncBadge").className = "badge muted";
+      $("syncBadge").textContent = "電腦程式未啟動";
+    }
+
+    // 帳戶
+    $("acct").innerHTML = my ? acctHtml(my, myAge) : '<div class="muted">還沒有收到你電腦上的程式回報。請確認跟單程式已開啟。</div>';
+    $("orders").innerHTML = my ? ordersHtml(my.recent || []) : "";
+
+    // 主機專用
+    $("stratCard").classList.toggle("hidden", !owner);
+    $("clientsCard").classList.toggle("hidden", !owner);
+    if (owner) {
+      $("strats").innerHTML = stratsHtml((d.private || {}).strategies || []);
+      $("combos").innerHTML = combosHtml((d.private || {}).combos || []);
+      $("clients").innerHTML = clientsHtml(d.clients || [], now, t1);
+    }
+    $("events").innerHTML = eventsHtml(d.events || []);
+    $("foot").textContent = "更新 " + new Date().toLocaleTimeString("zh-TW", { hour12: false }) + "｜每 10 秒自動更新";
+  }
+
+  function acctHtml(p, age) {
+    const m = p.margin || {};
+    const pl = p.pl_today || {}, plm = p.pl_month || {};
+    const rows = [
+      ["程式狀態", esc(p.status || "—") + (age > 90 ? ` <span class="warn">（${ago(age)}回報）</span>` : "")],
+      ["環境", p.simulation ? '<span class="warn">模擬</span>' : '<span class="bad">真實帳戶</span>'],
+      ["權益數", m.equity != null ? "NT$" + num(m.equity) : "—"],
+      ["可用保證金", m.available_margin != null ? "NT$" + num(m.available_margin) : "—"],
+      ["今日已實現", pl.pnl != null ? `<span class="${cls(pl.pnl)}">NT$${signed(pl.pnl)}</span>` : "—"],
+      ["本月已實現", plm.pnl != null ? `<span class="${cls(plm.pnl)}">NT$${signed(plm.pnl)}</span>` : "—"],
+      ["近月合約", esc(Object.values(p.near || {}).join("、") || "—")],
+    ];
+    if (p.alerts && p.alerts.length) rows.push(["警示", '<span class="bad">' + esc(p.alerts.join("、")) + "</span>"]);
+    if (p.account_error) rows.push(["帳務查詢", '<span class="warn">' + esc(p.account_error) + "</span>"]);
+    return rows.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
+  }
+  function ordersHtml(list) {
+    if (!list.length) return '<div class="muted" style="padding:6px 0">沒有委託</div>';
+    return `<table><tr><th>時間</th><th>合約</th><th class="r">口數</th><th class="r">成交</th><th class="r">均價</th><th class="r">滑價</th></tr>` +
+      list.slice().reverse().map((r) => `<tr><td>${esc(String(r.time || "").slice(5, 16))}</td><td>${esc(r.code)}</td>
+        <td class="r ${cls(r.qty)}">${signed(r.qty)}</td><td class="r">${num(r.filled)}</td><td class="r">${num(r.avg, 0)}</td>
+        <td class="r">${r.slip == null ? "—" : signed(r.slip, 0)}</td></tr>`).join("") + "</table>";
+  }
+  function stratsHtml(list) {
+    if (!list.length) return '<div class="muted">尚無資料</div>';
+    return `<table><tr><th>策略</th><th>方向</th><th class="r">進場</th><th class="r">未實現</th><th class="r">連輸/贏</th><th class="r">累計點</th></tr>` +
+      list.map((s) => {
+        const name = s.title || s.name || s.key;
+        const pos = s.mode === "band" ? (s.pos ? 1 : 0) : s.pos;
+        return `<tr><td>${esc(name)}</td><td>${dir(pos)}</td><td class="r">${num(s.ep)}</td>
+          <td class="r ${cls(s.unreal)}">${s.unreal == null ? "—" : signed(s.unreal)}</td>
+          <td class="r">${num(s.loss)}/${num(s.win)}</td><td class="r ${cls(s.pts)}">${signed(s.pts)}</td></tr>`;
+      }).join("") + "</table>";
+  }
+  function combosHtml(list) {
+    return list.map((c) => `<div class="row"><span class="k">${esc(c.name)}${c.main ? "（主）" : ""}</span>
+      <span class="v"><span class="${cls(c.pnl)}">NT$${signed(c.pnl)}</span><span class="muted" style="font-size:12.5px">｜回檔 ${num(c.dd)}</span></span></div>`).join("");
+  }
+  function clientsHtml(list, now, t1) {
+    const fl = list;
+    if (!fl.length) return '<div class="muted">還沒有親友。輸入名字按「新增親友」，把產生的邀請碼傳給他。</div>';
+    return fl.map((c) => {
+      const p = c.status || {};
+      const age = c.status_at ? (now - ts(c.status_at)) / 1000 : null;
+      const hk = p.held_by_kind || {};
+      const online = age != null && age < 90;
+      const state = !c.enabled ? ["bad", "已停用"] : c.paused ? ["warn", "主機暫停"] : !online ? ["warn", c.status_at ? "離線" : "未啟動"] : p.in_sync ? ["ok", "一致"] : ["warn", "調整中"];
+      return `<div class="client" data-uid="${esc(c.id)}" data-name="${esc(c.name)}">
+        <div class="row" style="padding-top:0"><span class="name">${esc(c.name)} <span class="muted" style="font-weight:400; font-size:12px">…${esc(c.code_hint || "")}</span></span><span class="badge ${state[0]}">${state[1]}</span></div>
+        <div class="row"><span class="k">目標／實際（微台）</span><span class="v"><span class="${cls(p.target_tmf)}">${signed(p.target_tmf)}</span> ／ <span class="${cls(hk["微台"] || 0)}">${signed(hk["微台"] || 0)}</span></span></div>
+        <div class="row"><span class="k">倍數（上限）</span><span class="v">${p.multiplier == null ? "—" : p.multiplier}（${c.max_multiplier}）</span></div>
+        <div class="row"><span class="k">環境／權益數</span><span class="v">${p.simulation === false ? '<span class="bad">真實</span>' : p.simulation ? "模擬" : "—"}／${p.margin && p.margin.equity != null ? "NT$" + num(p.margin.equity) : "—"}</span></div>
+        <div class="row"><span class="k">最後回報</span><span class="v">${age == null ? "—" : ago(age)}${c.machine_bound ? "" : '<span class="muted">（未綁定電腦）</span>'}</span></div>
+        <div class="actions">
+          <button class="btn small" data-act="${c.paused ? "resume" : "pause"}">${c.paused ? "恢復下單" : "暫停下單"}</button>
+          <button class="btn small" data-act="${c.enabled ? "disable" : "enable"}">${c.enabled ? "停用授權" : "恢復授權"}</button>
+          <button class="btn small" data-act="reset">重設電腦</button>
+          <button class="btn small" data-act="recode">重發邀請碼</button>
+          <button class="btn small" data-act="delete">刪除</button>
+          <span class="nowrap"><span class="k">倍數上限</span><input type="number" min="0" step="0.1" value="${esc(c.max_multiplier)}" data-max>
+          <button class="btn small" data-act="max">設定</button></span>
+        </div></div>`;
+    }).join("");
+  }
+  function eventsHtml(list) {
+    if (!list.length) return '<div class="muted">尚無紀錄</div>';
+    return list.slice(0, 12).map((e) => `<div class="ev"><span class="muted">${esc(String(e.ts || "").slice(5, 16).replace("T", " "))}</span>
+      <span>${signed(e.prev_tmf)} → <b class="${cls(e.target_tmf)}">${signed(e.target_tmf)}</b></span><span class="muted">@ ${num(e.px)}</span></div>`).join("");
+  }
+
+  // ---------- 主機操作 ----------
+  $("clients").addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button[data-act]");
+    if (!b) return;
+    const box = b.closest(".client"); const uid = box.dataset.uid; const act = b.dataset.act;
+    const args = { p_id: uid };
+    const name = box.dataset.name;
+    if (act === "recode") {
+      if (!confirm(`重發 ${name} 的邀請碼？舊的立刻失效，他要把新碼填進 config.json。`)) return;
+      b.disabled = true;
+      try { const r = await rpc("reset_code", { p_id: uid }); if (r && r.ok) showCode(name, r.code); await refresh(); }
+      catch (e) { alert(e.message); } finally { b.disabled = false; }
+      return;
+    }
+    if (act === "delete") {
+      if (!confirm(`刪除 ${name}？他的程式會拿不到訊號（部位維持不動）。`)) return;
+      b.disabled = true;
+      try { await rpc("delete_follower", { p_id: uid }); await refresh(); }
+      catch (e) { alert(e.message); } finally { b.disabled = false; }
+      return;
+    }
+    if (act === "pause") args.p_paused = true;
+    if (act === "resume") args.p_paused = false;
+    if (act === "disable") { if (!confirm("停用後他的程式拿不到訊號，部位會維持不動。確定停用？")) return; args.p_enabled = false; }
+    if (act === "enable") args.p_enabled = true;
+    if (act === "reset") { if (!confirm("重設後，他下一台啟動跟單程式的電腦會被綁定。確定？")) return; args.p_reset_machine = true; }
+    if (act === "max") { const v = parseFloat(box.querySelector("[data-max]").value); if (!(v >= 0)) return; args.p_max = v; }
+    b.disabled = true;
+    try { const r = await rpc("set_follower", args); if (!r || !r.ok) alert("沒有成功：" + ((r && r.error) || "")); await refresh(); }
+    catch (e) { alert(e.message); } finally { b.disabled = false; }
+  });
+
+  // ---------- 更新 ----------
+  async function refresh() {
+    if (busy) return; busy = true;
+    try {
+      const d = fcode ? await rpcAnon("f_dashboard", { p_code: fcode }) : await rpc("get_dashboard");
+      if (d && !d.ok && fcode && d.error === "BAD_CODE") { logout(); $("loginErr").textContent = "邀請碼已失效，請向主機索取新的邀請碼"; return; }
+      if (!d || !d.ok) {
+        const msg = { DISABLED: "你的授權已被停用", NOT_OWNER: "這個帳號不是主機", BAD_CODE: "邀請碼不正確" }[(d || {}).error] || (d || {}).error || "讀取失敗";
+        $("sigBadge").className = "badge bad"; $("sigBadge").textContent = msg; return;
+      }
+      render(d);
+    } catch (e) {
+      if (e.message === "NOAUTH") return;
+      $("sigBadge").className = "badge bad"; $("sigBadge").textContent = "連線失敗";
+      $("sigAge").textContent = e.message;
+    } finally { busy = false; }
+  }
+  function start() { stop(); refresh(); timer = setInterval(() => { if (!document.hidden) refresh(); }, 10000); }
+  function stop() { if (timer) clearInterval(timer); timer = null; }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && session) refresh(); });
+
+  $("loginForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault(); $("loginErr").textContent = ""; $("loginBtn").disabled = true;
+    try { await login($("email").value.trim(), $("pw").value); fcode = null; store.del("gw_code"); show("main"); start(); }
+    catch (e) { $("loginErr").textContent = /Invalid login/.test(e.message) ? "帳號或密碼錯誤" : e.message; }
+    finally { $("loginBtn").disabled = false; }
+  });
+  $("codeForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault(); $("loginErr").textContent = ""; $("codeBtn").disabled = true;
+    const c = $("code").value.trim().toUpperCase();
+    try {
+      const d = await rpcAnon("f_dashboard", { p_code: c });
+      if (!d || !d.ok) { $("loginErr").textContent = (d && d.error === "DISABLED") ? "這組邀請碼已被停用" : "邀請碼不正確"; return; }
+      fcode = c; session = null; store.del("gw_session"); store.set("gw_code", c); show("main"); render(d); start();
+    } catch (e) { $("loginErr").textContent = "連線失敗：" + e.message; }
+    finally { $("codeBtn").disabled = false; }
+  });
+  const ownerMode = (on) => {
+    $("codeForm").classList.toggle("hidden", on); $("loginForm").classList.toggle("hidden", !on);
+    $("loginTitle").textContent = on ? "主機登入" : "輸入邀請碼"; $("loginErr").textContent = "";
+  };
+  $("toOwner").addEventListener("click", () => ownerMode(true));
+  $("toCode").addEventListener("click", () => ownerMode(false));
+  function showCode(name, code) {
+    $("newCodeFor").textContent = `${name} 的邀請碼`;
+    $("newCodeVal").textContent = code;
+    $("newCode").classList.remove("hidden");
+  }
+  $("addForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const name = $("addName").value.trim(); const mx = parseFloat($("addMax").value);
+    if (!name) { $("addName").focus(); return; }
+    try {
+      const r = await rpc("add_follower", { p_name: name, p_max: isNaN(mx) ? 1 : mx });
+      if (!r || !r.ok) { alert("沒有成功：" + ((r && r.error) || "")); return; }
+      $("addName").value = ""; showCode(name, r.code); await refresh();
+    } catch (e) { alert(e.message); }
+  });
+  $("copyCode").addEventListener("click", async () => {
+    const t = $("newCodeVal").textContent;
+    try { await navigator.clipboard.writeText(t); $("copyCode").textContent = "已複製"; }
+    catch (e) { const r = document.createRange(); r.selectNodeContents($("newCodeVal")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    setTimeout(() => { $("copyCode").textContent = "複製"; }, 1500);
+  });
+  $("hideCode").addEventListener("click", () => { $("newCode").classList.add("hidden"); $("newCodeVal").textContent = ""; });
+  $("logoutBtn").addEventListener("click", logout);
+  $("cfgToggle").addEventListener("click", () => { $("cfgBox").classList.toggle("hidden"); $("cfgUrl").value = URL0; $("cfgKey").value = KEY0; });
+  $("cfgSave").addEventListener("click", () => {
+    URL0 = $("cfgUrl").value.trim(); KEY0 = $("cfgKey").value.trim();
+    store.set("gw_url", URL0); store.set("gw_key", KEY0); $("cfgBox").classList.add("hidden");
+  });
+
+  if (session || fcode) { show("main"); start(); } else { show("login"); }
+})();
+</script>
+</body>
+</html>
