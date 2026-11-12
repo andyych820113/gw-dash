@@ -142,6 +142,8 @@ details.alloc summary .muted { font-size: 12.5px; }
       <div class="stat"><div class="k">價格</div><div class="mid" id="px">—</div></div>
       <div class="stat"><div class="k">最新 K 棒</div><div class="mid" id="bar" style="font-size:16px">—</div></div>
     </div>
+    <div class="row" style="margin-top:8px"><span class="k">S0 方向燈<span class="muted" style="font-size:12px">（參考，不下單）</span></span>
+      <span class="v nowrap"><span id="s0Since" class="muted" style="font-size:12.5px"></span> <span id="s0" class="badge muted">—</span></span></div>
     <div class="sub" id="sigNote"></div>
   </div>
 
@@ -293,6 +295,10 @@ details.alloc summary .muted { font-size: 12.5px; }
     $("sigAge").textContent = d.updated_at ? "主機更新 " + ago(age) : "";
     $("px").textContent = num(sig.px);
     $("bar").textContent = sig.bar ? String(sig.bar).slice(5, 16) : "—";
+    const s0 = sig.s0 || null;
+    $("s0").className = "badge " + (!s0 || !s0.pos ? "muted" : s0.pos > 0 ? "long" : "short");
+    $("s0").textContent = !s0 ? "—" : s0.pos > 0 ? "偏多" : s0.pos < 0 ? "偏空" : "未定";
+    $("s0Since").textContent = s0 && s0.since ? String(s0.since).slice(5, 16) + "起" : "";
     $("sigNote").textContent = (sig.combo ? "組合 " + sig.combo : "") + (sig.target_time ? "｜最近換倉 " + String(sig.target_time).slice(5, 16) + " " + (sig.target_reason || "") : "");
 
     // 目標部位
@@ -347,9 +353,10 @@ details.alloc summary .muted { font-size: 12.5px; }
   }
 
   // ---------- 策略配置 ----------
-  const KEYS = ["S1", "S2", "S3", "A", "B"];
-  const NAMES = { S1: "S1", S2: "S2", S3: "S3", A: "回歸A", B: "回歸B" };
-  const wOf = (w, k) => (w && w[k]) || { on: true, mult: 1 };
+  const KEYS = ["S1", "S2", "S3", "A", "B", "H"];
+  const NAMES = { S1: "S1", S2: "S2", S3: "S3", A: "回歸A", B: "回歸B", H: "60分回歸" };
+  const LEGACY = ["S1", "S2", "S3", "A", "B"];   // 沒設定時預設開；新策略（H）沒設定時預設關
+  const wOf = (w, k) => (w && w[k]) || { on: LEGACY.includes(k), mult: 1 };
   const wText = (w) => KEYS.map((k) => { const x = wOf(w, k); return x.on ? `${NAMES[k]}×${Number(x.mult)}` : `${NAMES[k]} 關`; }).join("　");
   const isDefault = (w) => KEYS.every((k) => { const x = wOf(w, k); return x.on && Number(x.mult) === 1; });
   const wTarget = (legs, w) => KEYS.reduce((a, k) => { const x = wOf(w, k); return a + (Number((legs || {})[k]) || 0) * (x.on ? Number(x.mult) : 0); }, 0);
@@ -408,8 +415,8 @@ details.alloc summary .muted { font-size: 12.5px; }
     if (!list.length) return '<div class="muted">尚無資料</div>';
     return `<table><tr><th>策略</th><th>方向</th><th class="r">進場</th><th class="r">未實現</th><th class="r">連輸/贏</th><th class="r">累計點</th></tr>` +
       list.map((s) => {
-        const name = s.title || s.name || s.key;
-        const pos = s.mode === "band" ? (s.pos ? 1 : 0) : s.pos;
+        const name = (s.title || s.name || s.key) + (s.light ? " 方向燈" : "");
+        const pos = (s.mode === "band" || s.mode === "hour") ? (s.pos ? 1 : 0) : s.pos;
         return `<tr><td>${esc(name)}</td><td>${dir(pos)}</td><td class="r">${num(s.ep)}</td>
           <td class="r ${cls(s.unreal)}">${s.unreal == null ? "—" : signed(s.unreal)}</td>
           <td class="r">${num(s.loss)}/${num(s.win)}</td><td class="r ${cls(s.pts)}">${signed(s.pts)}</td></tr>`;
